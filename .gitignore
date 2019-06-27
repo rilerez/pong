@@ -1,5 +1,4 @@
 *.s
-assets
 embuild/
 build/
 *.out
