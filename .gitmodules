@@ -1,0 +1,3 @@
+[submodule "sdl2raii"]
+	path = sdl2raii
+	url = git@github.com:rilerez/sdl2raii.git
