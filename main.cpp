@@ -79,7 +79,9 @@ struct Ball {
   static int const side = 20;
 
   vec p = {300, 300};
-  vec v = {.1, .1};
+  vec v = {-.2, -.2};
+
+  Ball(vec p) : p{std::move(p)} {}
 
   auto moved_p(chrono::milliseconds dt) {
     return p + v * static_cast<float>(dt.count());
@@ -101,18 +103,41 @@ struct Ball {
 std::vector<sdl::Rect> bricks = {};
 
 void update() {
+  auto ballRect = ball.rect();
+
   player.x = player.moved_x(update_step);
   ball.p = ball.moved_p(update_step);
 
-  if(sdl::HasIntersection(player.rect(), ball.rect()) || ball.p.imag() <= 0)
+  auto const ballFlip = [](sdl::Rect r) {
+    std::cout << "flip";
+    auto const walkBack = [] { ball.p = ball.moved_p(-2 * update_step); };
+    auto const isPortrait = [] FN(_.h > _.w);
+    if(r.h == r.w)
+      r = *sdl::IntersectRect(
+          r,
+          Ball{ball.p + ball.v * -.1f * static_cast<float>(update_step.count())}
+              .rect());
+    walkBack();
+    if(isPortrait(r))
+      ball.flip_x();
+    else
+      ball.flip_y();
+  };
+
+  if(auto const intersectPlayer = sdl::IntersectRect(ballRect, player.rect()))
+    ballFlip(*intersectPlayer);
+
+  if(ball.p.imag() <= 0)
     ball.flip_y();
   if(ball.p.real() <= 0 || ball.p.real() >= screen_width - ball.side)
     ball.flip_x();
-  auto breakBrick = [=] FN(sdl::HasIntersection(_, ball.rect()));
-  auto collisionIter = std::remove_if(bricks.begin(), bricks.end(), breakBrick);
-  if(collisionIter != bricks.end()){
-    ball.flip_y();
-    bricks.erase(collisionIter);
+  auto shouldBreakBrick = [=] FN(sdl::HasIntersection(_, ballRect));
+  auto collisionIter =
+      std::remove_if(bricks.begin(), bricks.end(), shouldBreakBrick);
+  if(collisionIter != bricks.end()) {
+    auto const intersectBrick = *sdl::IntersectRect(ballRect, *collisionIter);
+    ballFlip(intersectBrick);
+    bricks.erase(collisionIter,bricks.end());
   }
 }
 
@@ -122,13 +147,10 @@ void render(sdl::Renderer* render, chrono::milliseconds lag) {
   sdl::SetRenderDrawColor(render, {200, 200, 200, 255});
   sdl::RenderFillRect(render, player.rect(lag));
   sdl::RenderFillRect(render, ball.rect(lag));
-
   sdl::SetRenderDrawColor(render, {200, 100, 200, 255});
-  for(const auto& brick : bricks)
-    sdl::RenderFillRect(render, brick);
+  sdl::RenderFillRects(render, &bricks[0], bricks.size());
   sdl::SetRenderDrawColor(render, {80, 80, 80, 255});
-  for(const auto& brick : bricks)
-    sdl::RenderDrawRect(render, brick);
+  sdl::RenderDrawRects(render, &bricks[0], bricks.size());
   sdl::RenderPresent(render);
 }
 
@@ -139,11 +161,12 @@ void reset() {
   bricks.clear();
   bricks.reserve(4);
   for(int r = 0; r < 3; ++r)
-  for(int i = 0; i < cols; ++i)
-    bricks.push_back(sdl::Rect{80 + 50 * i, 100 + 30*r, 50, 30});
+    for(int i = 0; i < cols; ++i)
+      bricks.push_back(sdl::Rect{80 + 50 * i, 100 + 30 * r, 50, 30});
 }
 
 int main() {
+  std::cout << "hello";
   sdl::Init(sdl::init::video);
   finally _ = [] { sdl::Quit(); };
 
