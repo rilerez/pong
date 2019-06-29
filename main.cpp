@@ -84,7 +84,12 @@ struct Ball {
   Ball(vec p) : p{std::move(p)} {}
 
   auto moved_p(chrono::milliseconds dt) {
-    return p + v * static_cast<float>(dt.count());
+    auto const newp = p + v * static_cast<float>(dt.count());
+    auto const [x, y] = std::tuple{newp.real(), newp.imag()};
+    auto const clamper = [](float const x, float const max) {
+      return clamp<float>(0, max - side, x);
+    };
+    return vec{clamper(x, screen_width), clamper(y, screen_height)};
   }
 
   auto rect(chrono::milliseconds lag = 0ms) {
@@ -109,7 +114,6 @@ void update() {
   ball.p = ball.moved_p(update_step);
 
   auto const ballFlip = [](sdl::Rect r) {
-    std::cout << "flip";
     auto const walkBack = [] { ball.p = ball.moved_p(-2 * update_step); };
     auto const isPortrait = [] FN(_.h > _.w);
     if(r.h == r.w)
@@ -133,11 +137,11 @@ void update() {
     ball.flip_x();
   auto shouldBreakBrick = [=] FN(sdl::HasIntersection(_, ballRect));
   auto collisionIter =
-      std::remove_if(bricks.begin(), bricks.end(), shouldBreakBrick);
+      partition(bricks.begin(), bricks.end(), [=] FN(!shouldBreakBrick(_)));
   if(collisionIter != bricks.end()) {
     auto const intersectBrick = *sdl::IntersectRect(ballRect, *collisionIter);
     ballFlip(intersectBrick);
-    bricks.erase(collisionIter,bricks.end());
+    bricks.erase(collisionIter, bricks.end());
   }
 }
 
@@ -166,7 +170,6 @@ void reset() {
 }
 
 int main() {
-  std::cout << "hello";
   sdl::Init(sdl::init::video);
   finally _ = [] { sdl::Quit(); };
 
