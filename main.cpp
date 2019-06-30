@@ -31,18 +31,17 @@ inline auto clamp(N const low, N const high, N const x) {
 #define FN(...)                                                                \
   (auto _) { return __VA_ARGS__; }
 
-int const screen_height = 1024;
+int const screen_height = 900;
 int const screen_width = 768;
 
+int const margin = 80;
 struct Player {
-  Player() = default;
-  static int const margin = 80;
   static int constexpr width = 100;
   static int const height = 20;
 
-  static int const y = screen_height - margin;
+  int y;
 
-  float x = 180.0;
+  float x = 0;
   float target = x;
   static float constexpr speed = 1.5;
 
@@ -70,7 +69,10 @@ struct Player {
   auto rect(chrono::milliseconds lag = 0ms) {
     return sdl::Rect{static_cast<int>(moved_x(lag)), y, width, height};
   }
-} player;
+
+  Player() = default;
+  Player(float const x, int const y) : x{x}, y{y}, target{x} {}
+} top, bottom;
 
 #include <complex>
 using vec = std::complex<float>;
@@ -105,12 +107,9 @@ struct Ball {
 
 } ball;
 
-std::vector<sdl::Rect> bricks = {};
-
 void update() {
   auto ballRect = ball.rect();
 
-  player.x = player.moved_x(update_step);
   ball.p = ball.moved_p(update_step);
 
   auto const ballFlip = [](sdl::Rect r) {
@@ -128,45 +127,39 @@ void update() {
       ball.flip_y();
   };
 
-  if(auto const intersectPlayer = sdl::IntersectRect(ballRect, player.rect()))
-    ballFlip(*intersectPlayer);
+  auto const updatePlayer = [=](Player& player) {
+    player.x = player.moved_x(update_step);
+    if(auto const intersectPlayer = sdl::IntersectRect(player.rect(), ballRect))
+      ballFlip(*intersectPlayer);
+  };
 
-  if(ball.p.imag() <= 0)
+  updatePlayer(top);
+  updatePlayer(bottom);
+
+  if(ball.p.imag() <= 0 || ball.p.imag() >= screen_height - ball.side)
     ball.flip_y();
   if(ball.p.real() <= 0 || ball.p.real() >= screen_width - ball.side)
     ball.flip_x();
-  auto shouldBreakBrick = [=] FN(sdl::HasIntersection(_, ballRect));
-  auto collisionIter =
-      partition(bricks.begin(), bricks.end(), [=] FN(!shouldBreakBrick(_)));
-  if(collisionIter != bricks.end()) {
-    auto const intersectBrick = *sdl::IntersectRect(ballRect, *collisionIter);
-    ballFlip(intersectBrick);
-    bricks.erase(collisionIter, bricks.end());
-  }
 }
 
 void render(sdl::Renderer* render, chrono::milliseconds lag) {
   sdl::SetRenderDrawColor(render, {80, 80, 80, 255});
   sdl::RenderClear(render);
   sdl::SetRenderDrawColor(render, {200, 200, 200, 255});
-  sdl::RenderFillRect(render, player.rect(lag));
+  auto const playerRender = [=](Player player) {
+    sdl::RenderFillRect(render, player.rect(lag));
+  };
+  playerRender(top);
+  playerRender(bottom);
   sdl::RenderFillRect(render, ball.rect(lag));
   sdl::SetRenderDrawColor(render, {200, 100, 200, 255});
-  sdl::RenderFillRects(render, &bricks[0], bricks.size());
-  sdl::SetRenderDrawColor(render, {80, 80, 80, 255});
-  sdl::RenderDrawRects(render, &bricks[0], bricks.size());
   sdl::RenderPresent(render);
 }
 
 void reset() {
-  player = {};
+  top = {30, margin};
+  bottom = {30, screen_height - margin -1};
   ball = {};
-  auto cols = 12;
-  bricks.clear();
-  bricks.reserve(4);
-  for(int r = 0; r < 3; ++r)
-    for(int i = 0; i < cols; ++i)
-      bricks.push_back(sdl::Rect{80 + 50 * i, 100 + 30 * r, 50, 30});
 }
 
 int main() {
@@ -203,15 +196,22 @@ int main() {
           emscripten_glue::cancel_main_loop();
           break;
         case SDL_FINGERMOTION:
-        case SDL_FINGERDOWN:
-          player.target = (event->tfinger.x) * static_cast<float>(screen_width);
-          break;
+        case SDL_FINGERDOWN: {
+          auto const y = event->tfinger.y* static_cast<float>(screen_height);
+          auto setTarget = [=](Player& player) {
+            player.target =
+                (event->tfinger.x) * static_cast<float>(screen_width);
+          };
+          if(y < 100) setTarget(top);
+          else if (y > screen_height - 100) setTarget(bottom);
+        } break;
         case SDL_KEYDOWN:
           switch(event->key.keysym.sym) {
             case SDLK_r:
               reset();
               break;
           }
+          break;
       }
     }
 
